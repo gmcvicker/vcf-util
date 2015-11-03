@@ -11,7 +11,9 @@
 #define VCF_MAX_FORMAT 1024
 
 typedef struct {
-  int n_samples;
+  long n_samples;
+  long n_geno_prob_col;
+  long n_haplo_prob_col;
   long n_header_lines;
 
   /* records true length of ref / alt alleles, which can be
@@ -25,6 +27,7 @@ typedef struct {
   char info[VCF_MAX_FILTER];
   char format[VCF_MAX_FORMAT];
 
+  
 
   /* used for reading lines */
   size_t buf_size;

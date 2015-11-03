@@ -87,6 +87,10 @@ void vcf_read_header(gzFile vcf_fh, VCFInfo *vcf_info) {
 	tok_num += 1;
       }
       vcf_info->n_samples = tok_num - n_fix_header;
+
+      vcf_info->n_geno_probs = vcf_info->n_samples * 3;
+      vcf_info->n_haplotype_col = vcf_info->n_samples * 3;
+	
       /* my_free(line); */
       break;
     } else {
