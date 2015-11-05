@@ -224,7 +224,7 @@ void vcf_parse_haplotypes(VCFInfo *vcf_info, char *haplotypes,
 
 
 void vcf_parse_geno_probs(VCFInfo *vcf_info, float *geno_probs,
-		      char *cur) {
+			  char *cur) {
   /* char delim[] = " \t"; */
   char delim[] = "\t";
   char inner_delim[] = ":";

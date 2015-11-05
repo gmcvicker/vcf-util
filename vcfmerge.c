@@ -24,32 +24,6 @@ void usage(char **argv) {
 
 
 
-/**
- * Counts number of lines in file, reads header information,
- * sets attributes such as number of samples in FileInfo structure,
- * and advances file handle to end of header
- */
-void set_file_info(gzFile gzf, char *filename, Arguments *args,
-		   FileInfo *file_info,
-		   VCFInfo *vcf, ImputeInfo *impute_info) {
-  long n_col;
-  
-  /* count total number lines in file, this tells us number of records */
-  fprintf(stderr, "counting lines in file\n");
-  file_info->n_lines = util_count_lines(filename);
-  fprintf(stderr, "  total lines: %ld\n", file_info->n_lines);
-
-  if(args->format == FORMAT_VCF) {
-    /* parse VCF headers */
-  }
-  
-  fprintf(stderr, "  number of samples: %ld\n", file_info->n_samples);    
-  ->n_geno_prob_col = file_info->n_samples * 3;
-  file_info->n_haplotype_col = file_info->n_samples * 2;  
-}
-
-
-
 
 void parse_vcf(int n_vcf_files, char **vcf_filenames) {
   VCFInfo **vcf;
@@ -58,37 +32,32 @@ void parse_vcf(int n_vcf_files, char **vcf_filenames) {
   SNP snp;
   int n_vcf;
   gzFile gzf;
+  float *geno_probs;
+  char *haplotypes;
 
   Chromosome *chrom;
 
   vcf = my_malloc(sizeof(VCFInfo *) * n_vcf);
   cur_snps = my_malloc(sizeof(SNP) * n_vcf);
 
-  /****** TODO *******/
-  vcf = vcf_info_new();
+  for(i = 0; i < n_vcf; i++) {
+    vcf[i] = vcf_info_new();
 
-  fprintf(stderr, "reading VCF header\n");
-  vcf_read_header(gzf, vcf);
-  fprintf(stderr, "  VCF header lines: %ld\n", vcf->n_header_lines);
-  
+    /* read information from header lines */
+    fprintf(stderr, "reading VCF header from %s\n", vcf_filenames[i]);
+    gzf = util_must_gzopen(vcf_filenames[i], "rb");
+    vcf_read_header(gzf, vcf[i]);
+    fprintf(stderr, "  VCF header lines: %ld\n", vcf[i]->n_header_lines);
 
-  
-  /* loop over input files, there should be one for each chromosome */
-  for(i = 0; i < args->n_input_files; i++) {
-
-    fprintf(stderr, "reading from file %s\n", args->input_files[i]);
-    gzf = util_must_gzopen(args->input_files[i], "rb");
-
-    set_file_info(gzf, args->input_files[i], args, &file_info, vcf, NULL);
-    
+    /** TODO: need to do renaming of samples when there are duplicate
+     ** sample names (postfix -1, -2, etc.) 
+     **/
     
     row = 0;
 
     fprintf(stderr, "parsing files\n");
-
     
-    while(vcf_read_line(gzf, vcf, &snp,
-			geno_probs, haplotypes) != -1) {
+    while(vcf_read_line(gzf, vcf, &snp, geno_probs, haplotypes) != -1) {
 
       if(geno_probs) {
 	write_h5matrix_row(gprob_info, row, geno_probs);
