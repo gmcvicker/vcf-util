@@ -13,6 +13,8 @@ typedef struct {
   long pos;
   char allele1[SNP_MAX_ALLELE];
   char allele2[SNP_MAX_ALLELE];
+  float *geno_probs;
+  char *haplotypes;
 } SNP;
 
 

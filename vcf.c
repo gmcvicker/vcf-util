@@ -31,16 +31,73 @@ VCFInfo *vcf_info_new() {
   vcf_info->buf_size = 1024;
   vcf_info->buf = my_malloc(vcf_info->buf_size);
 
+  vcf_info->n_chrom = 0;
+  vcf_info->max_chrom = VCF_N_CHROM_INIT;
+  vcf_info->chrom = my_malloc(sizeof(Chromosome) * VCF_N_CHROM_INIT);
+  
   return vcf_info;
 }
 
 
 /** 
  * free memory allocated for reading lines
+ * and for chromosomes
  */
 void vcf_info_free(VCFInfo *vcf_info) {
+  long i;
+  
   my_free(vcf_info->buf);
   my_free(vcf_info);
+
+  for(i = 0; i < vcf_info->n_chrom; i++) {
+    my_free(vcf_info->chrom[i].name);
+    my_free(vcf_info->chrom[i].assembly);
+
+  }
+  
+}
+
+
+
+void vcf_add_chrom(char *contig_str, VCFInfo *vcf_info) {
+  char *cur, *tok;
+  long i;
+  
+  if(vcf_info->n_chrom >= vcf_info->max_chrom) {
+    vcf_info->max_chrom *= 2;
+    fprintf(stderr, "increasing max number of chrom to %ld\n",
+	    vcf_info->max_chrom);
+    vcf_info->chrom = my_realloc(vcf_info->chrom,
+				 sizeof(Chromosome) * vcf_info->max_chrom);
+  }
+
+  i = vcf_info->n_chrom;
+
+  /* parse contig string which looks like:
+   * ##contig=<ID=8,assembly=b37,length=146364022>
+   */
+  cur = contig_str;
+  while((tok = strsep(&cur, "<>,")) != NULL) {
+    if(util_str_starts_with(tok, "ID=")) {
+      vcf_info->chrom[i].name = util_str_dup(&tok[3]);
+    }
+    if(util_str_starts_with(tok, "assembly=")) {
+      vcf_info->chrom[i].assembly = util_str_dup(&tok[9]);
+    }
+    if(util_str_starts_with(tok, "length=")) {
+      vcf_info->chrom[i].len = util_parse_long(&tok[7]);
+    }
+  }
+
+  vcf_info->chrom[i].id = i;
+  fprintf(stderr, "chromosome: %s %s %ld\n",
+	  vcf_info->chrom[i].name,
+	  vcf_info->chrom[i].assembly,
+	  vcf_info->chrom[i].len);
+
+  vcf_info->n_chrom += 1;
+
+  
 }
 
 
@@ -55,21 +112,18 @@ void vcf_read_header(gzFile vcf_fh, VCFInfo *vcf_info) {
   n_fix_header = sizeof(vcf_fix_headers) / sizeof(const char *);
 
   vcf_info->n_header_lines = 0;
+
   
   while(util_gzgetline(vcf_fh, &vcf_info->buf, &vcf_info->buf_size) != -1) {
-
-    /*
-    line = util_gzgets_line(vcf_fh);
-    if(line == NULL) {
-      my_err("%s:%d: could not read header information from file",
-	     __FILE__, __LINE__);
-    }
-    */
     line = vcf_info->buf;
   
     if(util_str_starts_with(line, "##")) {
       /* header line */
       vcf_info->n_header_lines += 1;
+
+      if(util_str_starts_with(line, "##contig")) {
+	vcf_add_chrom(line, vcf_info);
+      }
     }
     else if(util_str_starts_with(line, "#CHROM")) {
       /* this should be last header line that contains list of fixed fields */
@@ -88,8 +142,8 @@ void vcf_read_header(gzFile vcf_fh, VCFInfo *vcf_info) {
       }
       vcf_info->n_samples = tok_num - n_fix_header;
 
-      vcf_info->n_geno_probs = vcf_info->n_samples * 3;
-      vcf_info->n_haplotype_col = vcf_info->n_samples * 3;
+      vcf_info->n_geno_prob_col = vcf_info->n_samples * 3;
+      vcf_info->n_haplo_col = vcf_info->n_samples * 3;
 	
       /* my_free(line); */
       break;
@@ -316,25 +370,25 @@ void vcf_parse_geno_probs(VCFInfo *vcf_info, float *geno_probs,
 /**
  * Gets next line of VCF file and parses it into VCFInfo datastructure.
  *
- * If geno_probs array is non-null genotype likelihoods are parsed and
- * stored in the provided array. The array must be of length
+ * If snp->geno_probs is non-null genotype likelihoods are parsed and
+ * stored into array pointed to by snp->geno_probs. The array must be of length
  * n_samples*3.
  *
- * If haplotypes array is non-null phased genotypes are parsed and
- * stored in the provided array. The array must be of length
+ * If snp->haplotypes is non-null phased genotypes are parsed and
+ * stored into array pointed to by snp->haplotypes. The array must be of length
  * n_samples*2.
  *
  * Returns 0 on success, -1 if at EOF.
  */
-int vcf_read_line(gzFile vcf_fh, VCFInfo *vcf_info, SNP *snp,
-		  float *geno_probs, char *haplotypes) {
+int vcf_read_line(gzFile vcf_fh, VCFInfo *vcf_info, SNP *snp) {
   char *cur, *token;
   int n_fix_header, ref_len, alt_len;
   size_t tok_num;
 
-  /* Used to allow space or tab delimiters here but now only allow tab. 
-   * This is because VCF specification indicates that fields should be tab-delimited, 
-   * and occasionally some fields contain spaces.
+  /* Used to allow space or tab delimiters here but now only allow
+   * tab.  This is because VCF specification indicates that fields
+   * should be tab-delimited, and occasionally some fields contain
+   * spaces.
    */
   /* const char delim[] = " \t";*/
   const char delim[] = "\t";
@@ -428,7 +482,7 @@ int vcf_read_line(gzFile vcf_fh, VCFInfo *vcf_info, SNP *snp,
   util_strncpy(vcf_info->format, token, sizeof(vcf_info->format));
 
   /* now parse haplotypes and/or genotype likelihoods */
-  if(geno_probs && haplotypes) {
+  if(snp->geno_probs && snp->haplotypes) {
     char *cur_copy;    
     /* Both genotype probs and haplotypes requested.
      * Need to copy string because it is modified
@@ -440,14 +494,14 @@ int vcf_read_line(gzFile vcf_fh, VCFInfo *vcf_info, SNP *snp,
     cur_copy = my_malloc(strlen(cur)+1);
     strcpy(cur_copy, cur);
     
-    vcf_parse_geno_probs(vcf_info, geno_probs, cur_copy);
+    vcf_parse_geno_probs(vcf_info, snp->geno_probs, cur_copy);
     my_free(cur_copy);
 
-    vcf_parse_haplotypes(vcf_info, haplotypes, cur);
-  } else if(geno_probs) {
-    vcf_parse_geno_probs(vcf_info, geno_probs, cur);
-  } else if(haplotypes) {
-    vcf_parse_haplotypes(vcf_info, haplotypes, cur);
+    vcf_parse_haplotypes(vcf_info, snp->haplotypes, cur);
+  } else if(snp->geno_probs) {
+    vcf_parse_geno_probs(vcf_info, snp->geno_probs, cur);
+  } else if(snp->haplotypes) {
+    vcf_parse_haplotypes(vcf_info, snp->haplotypes, cur);
   }
 
   /* my_free(line); */
