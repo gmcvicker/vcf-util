@@ -10,6 +10,14 @@
 #include "util.h"
 #include "memutil.h"
 
+typedef struct  {
+  gzFile gzf;
+  Chromosome *cur_chrom;
+  VCFInfo *vcf;
+  char is_done;
+  SNP cur_snp;
+} FileInfo;
+
 
 
 void usage(char **argv) {
@@ -83,68 +91,79 @@ Chromosome *chrom_table_intersect(VCFInfo **vcf, int n_vcf, int *n_intersect) {
 
 
 
+void init_file_info(int n_vcf, char **vcf_filenames) {
+  FileInfo *f_info;
+  int i, ret;
 
-void merge_vcf(int n_vcf, char **vcf_filenames) {
-  VCFInfo **vcf;
-  SNP *cur_snps;
-  SNP snp;
-  int i, n_chrom;
-  gzFile *gzf;
-  char *is_done;
-  Chromosome *chrom_tab;
-  
+  f_info = my_malloc(sizeof(FileInfo *) * n_vcf);
 
-  vcf = my_malloc(sizeof(VCFInfo *) * n_vcf);
-  cur_snps = my_malloc(sizeof(SNP) * n_vcf);
-  gzf = my_malloc(sizeof(SNP) * n_vcf);
-  is_done = my_malloc(sizeof(char) * n_vcf);
-
-  fprintf(stderr, "n_vcf_files=%d\n", n_vcf);
-  
-  /* open all files and read header/sample information from them */
   for(i = 0; i < n_vcf; i++) {
-    vcf[i] = vcf_info_new();
-
+    f_info[i].vcf = vcf_info_new();
     fprintf(stderr, "reading VCF header from %s\n", vcf_filenames[i]);
-    gzf[i] = util_must_gzopen(vcf_filenames[i], "rb");
-    vcf_read_header(gzf[i], vcf[i]);
-    fprintf(stderr, "  VCF header lines: %ld\n", vcf[i]->n_header_lines);
-    
-    is_done[i] = FALSE;
+    f_info[i].gzf = util_must_gzopen(vcf_filenames[i], "rb");
+    vcf_read_header(f_info[i].gzf[i], vcf[i]);
+    fprintf(stderr, "  VCF header lines: %ld\n", f_info[i].vcf->n_header_lines);
+
+    f_info[i].is_done = FALSE;
+
     
     /* initialize memory for current SNPs */
-    cur_snps[i].geno_probs = my_malloc(sizeof(float) * vcf[i]->n_geno_prob_col);
-    cur_snps[i].haplotypes = my_malloc(sizeof(char) * vcf[i]->n_haplo_col);
+    f_info[i].cur_snp.geno_probs =
+      my_malloc(sizeof(float) * file_info[i].vcf->n_geno_prob_col);
+    f_info[i].cur_snp.haplotypes =
+      my_malloc(sizeof(char) * file_info[i].vcf->n_haplo_col);
     
-    /** TODO: need to do renaming of samples when there are duplicate
-     ** sample names (postfix -1, -2, etc.) 
-     **/
-  }
-
-  /* find chromosomes that are present in ALL VCFs */
-  chrom_tab = chrom_table_intersect(vcf, n_vcf, &n_chrom);
-
-  /* read first SNP from all files, check that chromosomes are the same */
-  int ret;
-  for(i = 0; i < n_vcf; i++) {
-    ret = vcf_read_line(gzf[i], vcf[i], &cur_snps[i]);
+    /* read first SNP from all files */
+    ret = vcf_read_line(f_info[i].gzf, f_info[i].vcf, &f_info[i].cur_snp);
     if(ret == -1) {
-      is_done[i] = TRUE;
+      my_err("file %s contains no SNPs\n", vcf_filename[i]);
     }
   }
 
-  fprintf(stderr, "parsing files\n");
+  return f_info;
+}
+
+
+void free_file_info(FileInfo *f_info, int n) {
+  for(i = 0; i < n; i++) {
+    vcf_info_free(f_info[i].vcf);
+    
+    gzclose(f_info.gzf[i]);
+
+    if(f_info[i].cur_snps.haplotypes) {
+      my_free(f_info[i].cur_snps.haplotypes);
+    }
+    if(f_info[i].cur_snps.geno_probs) {
+      my_free(f_info[i]..geno_probs);
+    }
+  }
+  my_free(f_info);
+}
+
+
+
+void merge_vcf(int n_vcf, char **vcf_filenames) {
+  FileInfo *f_info;
+  int n_done;
+
+  f_info = init_file_info(n_vcf, vcf_filenames):
+  
+  /* find chromosomes that are present in ALL VCFs */
+  chrom_tab = chrom_table_intersect(f_info, &n_chrom);
+  n_done = 0;
 
   
+  fprintf(stderr, "parsing files\n");
+  while(n_done < n_vcf) {
   
-  /** TODO! **/
-  
-  while(vcf_read_line(gzf[0], vcf[0], &cur_snps[0]) != -1) {
+  while(vcf_read_line(gzf[0], f_info.vcf[0], &cur_snps[0]) != -1) {
     /** TODO **/
     break;
   }
   
   fprintf(stderr, "\n");
+
+  free_file_info(f_info, n_vcf);
   
   for(i = 0; i < n_vcf; i++) {
     vcf_info_free(vcf[i]);
