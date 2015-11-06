@@ -46,15 +46,14 @@ VCFInfo *vcf_info_new() {
 void vcf_info_free(VCFInfo *vcf_info) {
   long i;
   
-  my_free(vcf_info->buf);
-  my_free(vcf_info);
-
   for(i = 0; i < vcf_info->n_chrom; i++) {
     my_free(vcf_info->chrom[i].name);
     my_free(vcf_info->chrom[i].assembly);
-
   }
-  
+
+  my_free(vcf_info->chrom);
+  my_free(vcf_info->buf);
+  my_free(vcf_info);
 }
 
 
@@ -143,7 +142,7 @@ void vcf_read_header(gzFile vcf_fh, VCFInfo *vcf_info) {
       vcf_info->n_samples = tok_num - n_fix_header;
 
       vcf_info->n_geno_prob_col = vcf_info->n_samples * 3;
-      vcf_info->n_haplo_col = vcf_info->n_samples * 3;
+      vcf_info->n_haplo_col = vcf_info->n_samples * 2;
 	
       /* my_free(line); */
       break;
@@ -465,7 +464,6 @@ int vcf_read_line(gzFile vcf_fh, VCFInfo *vcf_info, SNP *snp) {
   }
   util_strncpy(vcf_info->filter, token, sizeof(vcf_info->filter));
 
-
   /* info */
   token = strsep(&cur, delim);
   if(token == NULL) {
@@ -473,7 +471,6 @@ int vcf_read_line(gzFile vcf_fh, VCFInfo *vcf_info, SNP *snp) {
   }
   util_strncpy(vcf_info->info, token, sizeof(vcf_info->info));
 
-  
   /* format */
   token = strsep(&cur, delim);
   if(token == NULL) {
@@ -481,8 +478,12 @@ int vcf_read_line(gzFile vcf_fh, VCFInfo *vcf_info, SNP *snp) {
   }
   util_strncpy(vcf_info->format, token, sizeof(vcf_info->format));
 
+  snp->has_haplotypes = (get_format_index(vcf_info->format, "GT") >= 0);
+  snp->has_geno_probs = (get_format_index(vcf_info->format, "GL") >= 0);
+    
   /* now parse haplotypes and/or genotype likelihoods */
-  if(snp->geno_probs && snp->haplotypes) {
+  if(snp->has_geno_probs && snp->geno_probs &&
+     snp->has_haplotypes && snp->haplotypes) {
     char *cur_copy;    
     /* Both genotype probs and haplotypes requested.
      * Need to copy string because it is modified
@@ -498,9 +499,10 @@ int vcf_read_line(gzFile vcf_fh, VCFInfo *vcf_info, SNP *snp) {
     my_free(cur_copy);
 
     vcf_parse_haplotypes(vcf_info, snp->haplotypes, cur);
-  } else if(snp->geno_probs) {
+  } else if(snp->has_geno_probs && snp->geno_probs) {
     vcf_parse_geno_probs(vcf_info, snp->geno_probs, cur);
-  } else if(snp->haplotypes) {
+  } else if(snp->has_haplotypes && snp->haplotypes) {
+    fprintf(stderr, ".");
     vcf_parse_haplotypes(vcf_info, snp->haplotypes, cur);
   }
 

@@ -26,8 +26,8 @@ void usage(char **argv) {
 /**
  * Find subset of chromosomes that are present in all VCFs
  */
-Chromosome *chrom_table_intersect(VCFInfo **vcf, int n_vcf) {
-  int i, j, k, n_chrom, n_intersect;
+Chromosome *chrom_table_intersect(VCFInfo **vcf, int n_vcf, int *n_intersect) {
+  int i, j, k, n_chrom;
   int *counts;
   Chromosome *intersect;
 
@@ -40,7 +40,7 @@ Chromosome *chrom_table_intersect(VCFInfo **vcf, int n_vcf) {
     counts[i] = 1;
   }
 
-  n_intersect = 0;
+  *n_intersect = 0;
 
   /* count how many other VCFs each chrom occurs in */
   for(i = 0; i < vcf[0]->n_chrom; i++) {
@@ -50,7 +50,7 @@ Chromosome *chrom_table_intersect(VCFInfo **vcf, int n_vcf) {
 	  counts[i] += 1;
 	  if(counts[i] == n_vcf) {
 	    /* this chrom found in all VCFs */
-	    n_intersect += 1;
+	    *n_intersect += 1;
 	  }
 	  break;
 	}
@@ -58,7 +58,7 @@ Chromosome *chrom_table_intersect(VCFInfo **vcf, int n_vcf) {
     }
   }
 
-  intersect = my_malloc(sizeof(Chromosome) * n_intersect);
+  intersect = my_malloc(sizeof(Chromosome) * *n_intersect);
   j = 0;
   for(i = 0; i < vcf[0]->n_chrom; i++) {
     if(counts[i] == n_vcf) {
@@ -73,6 +73,9 @@ Chromosome *chrom_table_intersect(VCFInfo **vcf, int n_vcf) {
 	      "in %d/%d VCFs\n", vcf[0]->chrom[i].name, counts[i], n_vcf);
     }
   }
+
+
+  my_free(counts);
   
   return intersect;
 }
@@ -85,9 +88,9 @@ void merge_vcf(int n_vcf, char **vcf_filenames) {
   VCFInfo **vcf;
   SNP *cur_snps;
   SNP snp;
-  int i;
+  int i, n_chrom;
   gzFile *gzf;
-  char *cur_chrom, *is_done;
+  char *is_done;
   Chromosome *chrom_tab;
   
 
@@ -95,8 +98,6 @@ void merge_vcf(int n_vcf, char **vcf_filenames) {
   cur_snps = my_malloc(sizeof(SNP) * n_vcf);
   gzf = my_malloc(sizeof(SNP) * n_vcf);
   is_done = my_malloc(sizeof(char) * n_vcf);
-  
-  cur_chrom = NULL;
 
   fprintf(stderr, "n_vcf_files=%d\n", n_vcf);
   
@@ -121,42 +122,50 @@ void merge_vcf(int n_vcf, char **vcf_filenames) {
   }
 
   /* find chromosomes that are present in ALL VCFs */
-  chrom_tab = chrom_table_intersect(vcf, n_vcf);
+  chrom_tab = chrom_table_intersect(vcf, n_vcf, &n_chrom);
 
-  
   /* read first SNP from all files, check that chromosomes are the same */
   int ret;
   for(i = 0; i < n_vcf; i++) {
     ret = vcf_read_line(gzf[i], vcf[i], &cur_snps[i]);
     if(ret == -1) {
       is_done[i] = TRUE;
-    } else {
-      if(cur_chrom == NULL) {
-	cur_chrom = util_str_dup(cur_snps[i].chrom);
-      } else {
-	if(strcmp(cur_chrom, cur_snps[i].chrom) != 0) {
-	  my_err("%s:%d: VCFs do not all start with same chromosome. "
-		 "%s != %s", __FILE__, __LINE__, cur_chrom, cur_snps[i].chrom);
-	}
-      }
     }
   }
 
   fprintf(stderr, "parsing files\n");
 
+  
+  
   /** TODO! **/
-  while(vcf_read_line(gzf, vcf[0], &snp) != -1) {
+  
+  while(vcf_read_line(gzf[0], vcf[0], &cur_snps[0]) != -1) {
     /** TODO **/
+    break;
   }
   
   fprintf(stderr, "\n");
   
-  gzclose(gzf);
-
   for(i = 0; i < n_vcf; i++) {
     vcf_info_free(vcf[i]);
+    gzclose(gzf[i]);
+
+    if(cur_snps[i].haplotypes) {
+      my_free(cur_snps[i].haplotypes);
+    }
+    if(cur_snps[i].geno_probs) {
+      my_free(cur_snps[i].geno_probs);
+    }
   }
+  for(i = 0; i < n_chrom; i++) {
+    my_free(chrom_tab[i].name);
+    my_free(chrom_tab[i].assembly);
+  }
+  my_free(chrom_tab);
   my_free(vcf);
+  my_free(cur_snps);
+  my_free(is_done);
+  my_free(gzf);
   
 }
 

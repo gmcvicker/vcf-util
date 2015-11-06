@@ -1,6 +1,6 @@
 # Edit the following variables as needed
 CC=gcc
-LIB=-lz
+LIB=-lz -lm
 
 INCLUDE=
 CFLAGS=-g $(INCLUDE)
