@@ -407,7 +407,7 @@ int vcf_read_line(gzFile vcf_fh, VCFInfo *vcf_info, SNP *snp) {
   if(token == NULL) {
     my_err("expected at least %d tokens per line\n", n_fix_header);
   }
-  util_strncpy(snp->chrom, token, sizeof(snp->chrom));
+  util_strncpy(snp->chrom_name, token, sizeof(snp->chrom_name));
   
   
   /* pos */
@@ -480,7 +480,7 @@ int vcf_read_line(gzFile vcf_fh, VCFInfo *vcf_info, SNP *snp) {
 
   snp->has_haplotypes = (get_format_index(vcf_info->format, "GT") >= 0);
   snp->has_geno_probs = (get_format_index(vcf_info->format, "GL") >= 0);
-    
+  
   /* now parse haplotypes and/or genotype likelihoods */
   if(snp->has_geno_probs && snp->geno_probs &&
      snp->has_haplotypes && snp->haplotypes) {
